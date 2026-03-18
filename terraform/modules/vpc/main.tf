@@ -63,8 +63,8 @@ resource "google_compute_firewall" "allow_health_checks" {
     protocol = "tcp"
     ports    = ["8080"]
   }
-
   source_ranges = ["130.211.0.0/22", "35.232.0.0/16"]
   description   = "Allow Google cloud health check"
+}
   
 
