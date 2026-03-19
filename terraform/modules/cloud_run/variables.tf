@@ -1,19 +1,4 @@
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
 
-variable "region" {
-  description = "GCP Region"
-  type        = string
-  default     = "europe-west2"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
-}
 
 variable "service_name" {
   description = "Cloud Run service name"
@@ -68,4 +53,21 @@ variable "memory" {
   description = "Memory limit for container"
   type        = string
   default     = "512Mi"
+}
+
+variable "project_id" {
+  description = "GCP Project ID"
+  type        = string
+}
+
+variable "region" {
+  description = "GCP Region"
+  type        = string
+  default     = "europe-west2"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "dev"
 }

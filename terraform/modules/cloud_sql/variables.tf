@@ -1,20 +1,3 @@
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
-
-variable "region" {
-  description = "GCP Region"
-  type        = string
-  default     = "europe-west2"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
-}
-
 variable "instance_name" {
   description = "Cloud SQL instance name"
   type        = string
@@ -71,4 +54,21 @@ variable "vpc_id" {
 variable "private_vpc_connection" {
   description = "Private VPC connection dependency"
   type        = string
+}
+
+variable "project_id" {
+  description = "GCP Project ID"
+  type        = string
+}
+
+variable "region" {
+  description = "GCP Region"
+  type        = string
+  default     = "europe-west2"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "dev"
 }

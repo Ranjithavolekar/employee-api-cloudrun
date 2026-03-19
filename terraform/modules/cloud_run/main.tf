@@ -62,7 +62,6 @@ resource "google_cloud_run_v2_service" "employee_api" {
 
       env {
         name  = "ENVIRONMENT"
-        value = var.environment
       }
 
       # ── Health Checks ────────────────────────────────
@@ -91,7 +90,6 @@ resource "google_cloud_run_v2_service" "employee_api" {
 
     # ── Labels ──────────────────────────────────────────
     labels = {
-      environment = var.environment
       application = "employee-api"
       managed-by  = "terraform"
     }
