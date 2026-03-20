@@ -1,23 +1,19 @@
 name: Deploy Employee API to Cloud Run
 
-# ── Triggers ──────────────────────────────────────────────────
 on:
   push:
     branches:
-      - main        # Deploy to production
-      - dev         # Deploy to dev environment
+      - main
+      - dev
   pull_request:
     branches:
       - main
-      - dev         # Run CI checks on PRs
+      - dev
 
-# ── Permissions ───────────────────────────────────────────────
-# Required for Workload Identity Federation
 permissions:
   contents: read
   id-token: write
 
-# ── Environment Variables ──────────────────────────────────────
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ secrets.GCP_REGION }}
@@ -25,52 +21,40 @@ env:
   REGISTRY_URL: ${{ secrets.ARTIFACT_REGISTRY_URL }}
   IMAGE_NAME: ${{ secrets.ARTIFACT_REGISTRY_URL }}/employee-api
 
-# ═══════════════════════════════════════════════════════════════
-# JOB 1: CI — Continuous Integration
-# Runs on ALL branches and Pull Requests
-# ═══════════════════════════════════════════════════════════════
 jobs:
   ci:
     name: CI — Build and Test
     runs-on: ubuntu-latest
 
     steps:
-      # ── Step 1: Checkout Code ────────────────────────────
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── Step 2: Set up Python ────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # ── Step 3: Install Dependencies ─────────────────────
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r app/requirements.txt
           pip install pytest pytest-cov flake8
 
-      # ── Step 4: Lint Code ─────────────────────────────────
       - name: Lint with flake8
         run: |
-          # Check for syntax errors and critical issues
           flake8 app/ --count --select=E9,F63,F7,F82 \
             --show-source --statistics
-          # Check for style issues (warnings only)
           flake8 app/ --count --exit-zero \
             --max-complexity=10 --max-line-length=127 \
             --statistics
 
-      # ── Step 5: Build Docker Image ────────────────────────
       - name: Build Docker image
         run: |
           docker build -t employee-api:${{ github.sha }} .
           echo "✅ Docker image built successfully!"
 
-      # ── Step 6: Verify Container Starts ──────────────────
       - name: Verify container starts
         run: |
           docker run -d \
@@ -83,44 +67,33 @@ jobs:
           docker stop test-container || true
           echo "✅ Container verification complete!"
 
-  # ═══════════════════════════════════════════════════════════════
-  # JOB 2: CD — Continuous Deployment
-  # Runs ONLY on main and dev branches (not PRs)
-  # ═══════════════════════════════════════════════════════════════
   cd:
     name: CD — Deploy to Cloud Run
     runs-on: ubuntu-latest
-    needs: ci  # Only runs if CI job passes ✅
-    # Only deploy on push to main or dev — NOT on pull requests
+    needs: ci
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev')
 
     steps:
-      # ── Step 1: Checkout Code ────────────────────────────
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── Step 2: Authenticate with GCP ────────────────────
-      # Using Workload Identity Federation — no key files! 🔐
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
           service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
 
-      # ── Step 3: Setup gcloud CLI ──────────────────────────
       - name: Set up Cloud SDK
         uses: google-github-actions/setup-gcloud@v2
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
 
-      # ── Step 4: Configure Docker for Artifact Registry ───
       - name: Configure Docker for Artifact Registry
         run: |
           gcloud auth configure-docker ${{ secrets.GCP_REGION }}-docker.pkg.dev \
             --quiet
           echo "✅ Docker configured for Artifact Registry!"
 
-      # ── Step 5: Build Docker Image ────────────────────────
       - name: Build Docker image
         run: |
           docker build \
@@ -129,33 +102,13 @@ jobs:
             .
           echo "✅ Docker image built!"
 
-      # ── Step 6: Push to Artifact Registry ────────────────
       - name: Push Docker image to Artifact Registry
         run: |
           docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
           docker push ${{ env.IMAGE_NAME }}:latest
           echo "✅ Image pushed to Artifact Registry!"
 
-      # ── Step 7: Deploy to Cloud Run ───────────────────────
       - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy ${{ env.SERVICE_NAME }} \
-            --image=${{ env.IMAGE_NAME }}:${{ github.sha }} \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --platform=managed \
-            --allow-unauthenticated \
-            --service-account=cloud-run-sa@${{ env.PROJECT_ID }}.iam.gserviceaccount.com \
-            --quiet
-          echo "✅ Deployed to Cloud Run!"
-
-      # ── Step 8: Verify Deployment ─────────────────────────
-      - name: Verify deployment health
-        run: |
-          # Get the Cloud Run URL
-          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
-- name: Deploy to Cloud Run
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
             --image=${{ env.IMAGE_NAME }}:${{ github.sha }} \
@@ -172,17 +125,17 @@ jobs:
             --max-instances=3 \
             --port=8080 \
             --quiet
-          echo "✅ Deployed to Cloud Run!"            --project=${{ env.PROJECT_ID }} \
+          echo "✅ Deployed to Cloud Run!"
+
+      - name: Verify deployment health
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
-
           echo "🚀 Service URL: $URL"
-
-          # Wait for service to be ready
           sleep 10
-
-          # Hit the health endpoint
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
-
           if [ $RESPONSE -eq 200 ]; then
             echo "✅ Health check passed! App is live at $URL"
           else
@@ -190,14 +143,12 @@ jobs:
             exit 1
           fi
 
-      # ── Step 9: Print Deployment Summary ─────────────────
       - name: Deployment Summary
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
-
           echo "════════════════════════════════════"
           echo "✅ DEPLOYMENT SUCCESSFUL!"
           echo "════════════════════════════════════"
