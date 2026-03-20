@@ -1,20 +1,35 @@
 from fastapi import FastAPI
-from database import Base, engine
-from routes.employees import router as employee_router
+from contextlib import asynccontextmanager
+import logging
 
-# Create database tables on startup
-Base.metadata.create_all(bind=engine)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    try:
+        from database import Base, get_engine
+        engine = get_engine()
+        Base.metadata.create_all(bind=engine)
+        logger.info("✅ Database tables created successfully!")
+    except Exception as e:
+        logger.warning(f"⚠️ Database not ready yet: {e}")
+    yield
+    logger.info("Shutting down...")
 
 app = FastAPI(
     title="Employee Management API",
-    description="A production-grade Employee API deployed on GCP Cloud Run",
-    version="1.0.0"
+    description="Production-grade Employee API on GCP Cloud Run",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
-# Health check endpoint — used by Cloud Run to verify app is running
+# Health check — responds immediately, no DB needed!
 @app.get("/health", tags=["Health"])
 def health_check():
     return {"status": "healthy", "service": "employee-api"}
 
-# Register routes
+# Routes
+from routes.employees import router as employee_router
 app.include_router(employee_router)

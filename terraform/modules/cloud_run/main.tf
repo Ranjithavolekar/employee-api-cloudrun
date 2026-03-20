@@ -3,37 +3,27 @@ resource "google_cloud_run_v2_service" "employee_api" {
   name     = var.service_name
   location = var.region
   project  = var.project_id
-
-  # Allow unauthenticated requests
-  # (Our API is publicly accessible)
-  ingress = "INGRESS_TRAFFIC_ALL"
+  ingress  = "INGRESS_TRAFFIC_ALL"
 
   template {
-    # ── Service Account ──────────────────────────────────
     service_account = var.cloud_run_sa_email
 
-    # ── Scaling Configuration ────────────────────────────
     scaling {
       min_instance_count = var.min_instances
       max_instance_count = var.max_instances
     }
 
-    # ── VPC Access ───────────────────────────────────────
-    # Connect Cloud Run to our VPC to reach Cloud SQL
-    vpc_access {
-      network_interfaces {
-        network    = var.vpc_name
-        subnetwork = var.subnet_name
+    # ── Cloud SQL Connection ──────────────────────────────
+    volumes {
+      name = "cloudsql"
+      cloud_sql_instance {
+        instances = [var.cloud_sql_connection]
       }
-      egress = "PRIVATE_RANGES_ONLY"
     }
 
-    # ── Container Configuration ──────────────────────────
     containers {
-      # Docker image from Artifact Registry
       image = var.container_image
 
-      # ── Container Resources ──────────────────────────
       resources {
         limits = {
           cpu    = var.cpu
@@ -43,13 +33,17 @@ resource "google_cloud_run_v2_service" "employee_api" {
         startup_cpu_boost = true
       }
 
-      # ── Container Port ───────────────────────────────
       ports {
         container_port = 8080
       }
 
-      # ── Environment Variables ────────────────────────
-      # Inject DATABASE_URL from Secret Manager
+      # ── Mount Cloud SQL socket ────────────────────────
+      volume_mounts {
+        name       = "cloudsql"
+        mount_path = "/cloudsql"
+      }
+
+      # ── Environment Variables ─────────────────────────
       env {
         name = "DATABASE_URL"
         value_source {
@@ -62,18 +56,19 @@ resource "google_cloud_run_v2_service" "employee_api" {
 
       env {
         name  = "ENVIRONMENT"
+        value = var.environment
       }
 
-      # ── Health Checks ────────────────────────────────
+      # ── Health Checks ─────────────────────────────────
       startup_probe {
         http_get {
           path = "/health"
           port = 8080
         }
-        initial_delay_seconds = 10
-        timeout_seconds       = 5
-        period_seconds        = 10
-        failure_threshold     = 3
+        initial_delay_seconds = 30
+        timeout_seconds       = 10
+        period_seconds        = 15
+        failure_threshold     = 5
       }
 
       liveness_probe {
@@ -88,15 +83,13 @@ resource "google_cloud_run_v2_service" "employee_api" {
       }
     }
 
-    # ── Labels ──────────────────────────────────────────
     labels = {
+      environment = var.environment
       application = "employee-api"
       managed-by  = "terraform"
     }
   }
 
-  # ── Traffic Configuration ────────────────────────────────
-  # Send 100% traffic to latest revision
   traffic {
     type    = "TRAFFIC_TARGET_ALLOCATION_TYPE_LATEST"
     percent = 100

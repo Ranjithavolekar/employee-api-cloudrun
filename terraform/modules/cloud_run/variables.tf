@@ -1,4 +1,19 @@
+variable "project_id" {
+  description = "GCP Project ID"
+  type        = string
+}
 
+variable "region" {
+  description = "GCP Region"
+  type        = string
+  default     = "europe-west2"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "dev"
+}
 
 variable "service_name" {
   description = "Cloud Run service name"
@@ -7,7 +22,7 @@ variable "service_name" {
 }
 
 variable "container_image" {
-  description = "Docker image URL from Artifact Registry"
+  description = "Docker image URL"
   type        = string
 }
 
@@ -16,18 +31,13 @@ variable "cloud_run_sa_email" {
   type        = string
 }
 
-variable "vpc_name" {
-  description = "VPC network name"
-  type        = string
-}
-
-variable "subnet_name" {
-  description = "Subnet name"
-  type        = string
-}
-
 variable "db_url_secret_id" {
   description = "Secret Manager secret ID for database URL"
+  type        = string
+}
+
+variable "cloud_sql_connection" {
+  description = "Cloud SQL instance connection name"
   type        = string
 }
 
@@ -44,30 +54,13 @@ variable "max_instances" {
 }
 
 variable "cpu" {
-  description = "CPU limit for container"
+  description = "CPU limit"
   type        = string
   default     = "1"
 }
 
 variable "memory" {
-  description = "Memory limit for container"
+  description = "Memory limit"
   type        = string
   default     = "512Mi"
-}
-
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
-
-variable "region" {
-  description = "GCP Region"
-  type        = string
-  default     = "europe-west2"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
 }
