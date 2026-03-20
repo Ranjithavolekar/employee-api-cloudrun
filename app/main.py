@@ -5,22 +5,19 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ── Lifespan handler ──────────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup — try to connect to DB gracefully
+    # Startup
     try:
-        from database import Base, engine
+        from database import Base, get_engine
+        engine = get_engine()
         Base.metadata.create_all(bind=engine)
         logger.info("✅ Database tables created successfully!")
     except Exception as e:
-        logger.warning(f"⚠️ Database connection failed: {e}")
-        logger.warning("App starting without DB — will retry on requests")
+        logger.warning(f"⚠️ Database not ready yet: {e}")
     yield
-    # Shutdown
     logger.info("Shutting down...")
 
-# ── FastAPI App ───────────────────────────────────────────────
 app = FastAPI(
     title="Employee Management API",
     description="Production-grade Employee API on GCP Cloud Run",
@@ -28,12 +25,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# ── Health Check ──────────────────────────────────────────────
-# This MUST respond quickly — even if DB is not ready!
+# Health check — responds immediately, no DB needed!
 @app.get("/health", tags=["Health"])
 def health_check():
     return {"status": "healthy", "service": "employee-api"}
 
-# ── Routes ────────────────────────────────────────────────────
+# Routes
 from routes.employees import router as employee_router
 app.include_router(employee_router)
