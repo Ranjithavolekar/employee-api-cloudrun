@@ -18,7 +18,8 @@ output "subnet_name" {
   value       = google_compute_subnetwork.subnet.name
 }
 
+# No more private_vpc_connection output needed!
 output "private_vpc_connection" {
-  description = "The private VPC connection for Cloud SQL"
-  value       = google_service_networking_connection.private_vpc_connection.network
+  description = "Placeholder for compatibility"
+  value       = "not-required"
 }
