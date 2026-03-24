@@ -1,4 +1,4 @@
-cd:
+  cd:
     name: CD — Deploy to Cloud Run
     runs-on: ubuntu-latest
     needs: ci
@@ -39,7 +39,7 @@ cd:
           docker push ${{ env.IMAGE_NAME }}:latest
           echo "✅ Image pushed!"
 
-      # ── Step 1: Deploy new version with NO traffic ──────
+      # ── Step 1: Deploy new revision with NO traffic ──────
       - name: Deploy new revision (no traffic)
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
@@ -59,54 +59,36 @@ cd:
             --tag=v2 \
             --no-traffic \
             --quiet
-          echo "✅ New revision deployed with no traffic!"
+          echo "✅ New revision deployed with 0% traffic!"
 
       # ── Step 2: Health check new revision ───────────────
       - name: Health check new revision
         run: |
-          sleep 10
-
-          # Get the tagged revision URL
-          REVISION_URL=$(gcloud run services describe \
-            ${{ env.SERVICE_NAME }} \
+          sleep 15
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
-            --format="value(status.traffic[0].url)")
-
-          # Check tagged URL directly
-          TAG_URL="https://v2---$(gcloud run services describe \
-            ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --format='value(status.url)' | sed 's|https://||')"
+            --format="value(status.url)")
 
           echo "🔍 Checking new revision health..."
-          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-            $(gcloud run services describe ${{ env.SERVICE_NAME }} \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --format="value(status.url)")/health)
+          RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
 
           if [ $RESPONSE -eq 200 ]; then
-            echo "✅ Health check passed!"
+            echo "✅ Health check passed — safe to proceed!"
           else
-            echo "❌ Health check failed — rolling back!"
-            gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
-              --region=${{ env.REGION }} \
-              --project=${{ env.PROJECT_ID }} \
-              --to-revisions=LATEST=0
+            echo "❌ Health check failed — aborting deployment!"
             exit 1
           fi
 
-      # ── Step 3: Canary — 20% traffic to new version ─────
+      # ── Step 3: Canary — 20% traffic ────────────────────
       - name: Canary — shift 20% traffic to v2
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
-            --to-tags=v2=20
-          echo "✅ 20% traffic on new version!"
-          sleep 15
+            --to-tags=v2=20 \
+            --quiet
+          echo "✅ 20% traffic shifted to v2!"
 
       # ── Step 4: Monitor at 20% ───────────────────────────
       - name: Monitor at 20% traffic
@@ -116,10 +98,9 @@ cd:
             --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
 
-          echo "🔍 Monitoring at 20% traffic..."
-
-          # Run 5 health checks
+          echo "🔍 Running 5 health checks at 20% traffic..."
           FAILURES=0
+
           for i in 1 2 3 4 5; do
             RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
             if [ $RESPONSE -ne 200 ]; then
@@ -131,27 +112,71 @@ cd:
             sleep 3
           done
 
-          # If more than 1 failure — rollback!
           if [ $FAILURES -gt 1 ]; then
             echo "❌ Too many failures — rolling back to v1!"
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --project=${{ env.PROJECT_ID }} \
-              --to-tags=v2=0
+              --to-tags=v2=0 \
+              --quiet
             exit 1
           fi
           echo "✅ Monitoring passed at 20%!"
 
-      # ── Step 5: Shift 100% traffic to new version ───────
+      # ── Step 5: Canary — 50% traffic ────────────────────
+      - name: Canary — shift 50% traffic to v2
+        run: |
+          gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --to-tags=v2=50 \
+            --quiet
+          echo "✅ 50% traffic shifted to v2!"
+
+      # ── Step 6: Monitor at 50% ───────────────────────────
+      - name: Monitor at 50% traffic
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region=${{ env.REGION }} \
+            --project=${{ env.PROJECT_ID }} \
+            --format="value(status.url)")
+
+          echo "🔍 Running 5 health checks at 50% traffic..."
+          FAILURES=0
+
+          for i in 1 2 3 4 5; do
+            RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
+            if [ $RESPONSE -ne 200 ]; then
+              FAILURES=$((FAILURES + 1))
+              echo "⚠️ Check $i failed with status: $RESPONSE"
+            else
+              echo "✅ Check $i passed!"
+            fi
+            sleep 3
+          done
+
+          if [ $FAILURES -gt 1 ]; then
+            echo "❌ Too many failures — rolling back to v1!"
+            gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
+              --region=${{ env.REGION }} \
+              --project=${{ env.PROJECT_ID }} \
+              --to-tags=v2=0 \
+              --quiet
+            exit 1
+          fi
+          echo "✅ Monitoring passed at 50%!"
+
+      # ── Step 7: Promote to 100% ──────────────────────────
       - name: Promote — shift 100% traffic to v2
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \
             --project=${{ env.PROJECT_ID }} \
-            --to-tags=v2=100
+            --to-tags=v2=100 \
+            --quiet
           echo "✅ 100% traffic on new version!"
 
-      # ── Step 6: Final health check ───────────────────────
+      # ── Step 8: Final health check ───────────────────────
       - name: Final health check
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -159,7 +184,9 @@ cd:
             --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
           sleep 10
+
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
+
           if [ $RESPONSE -eq 200 ]; then
             echo "✅ Final health check passed!"
           else
@@ -167,11 +194,12 @@ cd:
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --project=${{ env.PROJECT_ID }} \
-              --to-tags=v2=0
+              --to-tags=v2=0 \
+              --quiet
             exit 1
           fi
 
-      # ── Step 7: Deployment Summary ───────────────────────
+      # ── Step 9: Deployment Summary ───────────────────────
       - name: Deployment Summary
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -185,5 +213,5 @@ cd:
           echo "📦 Image:           ${{ env.IMAGE_NAME }}:${{ github.sha }}"
           echo "🌿 Branch:          ${{ github.ref_name }}"
           echo "👤 Deployed by:     ${{ github.actor }}"
-          echo "🚦 Strategy:        Canary (20% → 100%)"
+          echo "🚦 Strategy:        Canary (0→20→50→100%)"
           echo "════════════════════════════════════"
