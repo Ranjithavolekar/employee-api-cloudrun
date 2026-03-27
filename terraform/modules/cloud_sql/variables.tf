@@ -1,3 +1,20 @@
+variable "project_id" {
+  description = "GCP Project ID"
+  type        = string
+}
+
+variable "region" {
+  description = "GCP Region"
+  type        = string
+  default     = "europe-west2"
+}
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "dev"
+}
+
 variable "instance_name" {
   description = "Cloud SQL instance name"
   type        = string
@@ -11,7 +28,7 @@ variable "instance_tier" {
 }
 
 variable "availability_type" {
-  description = "Availability type: ZONAL or REGIONAL"
+  description = "Availability type"
   type        = string
   default     = "ZONAL"
 }
@@ -44,31 +61,4 @@ variable "db_password" {
   description = "Database password"
   type        = string
   sensitive   = true
-}
-
-variable "vpc_id" {
-  description = "VPC network ID for private IP"
-  type        = string
-}
-
-variable "private_vpc_connection" {
-  description = "Private VPC connection dependency"
-  type        = string
-}
-
-variable "project_id" {
-  description = "GCP Project ID"
-  type        = string
-}
-
-variable "region" {
-  description = "GCP Region"
-  type        = string
-  default     = "europe-west2"
-}
-
-variable "environment" {
-  description = "Environment name"
-  type        = string
-  default     = "dev"
 }

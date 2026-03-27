@@ -1,8 +1,3 @@
-output "cloud_run_url" {
-  description = "URL of the deployed Employee API"
-  value       = module.cloud_run.service_url
-}
-
 output "artifact_registry_url" {
   description = "Artifact Registry repository URL"
   value       = module.artifact_registry.repository_url

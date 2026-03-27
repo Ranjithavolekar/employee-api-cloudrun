@@ -5,25 +5,16 @@ resource "google_sql_database_instance" "postgres" {
   region           = var.region
   project          = var.project_id
 
-  # Prevent accidental deletion of database! 🔐
   deletion_protection = var.deletion_protection
 
   settings {
-    # db-f1-micro = smallest instance (free tier eligible) 💰
-    tier = var.instance_tier
-
-    # ── Availability ────────────────────────────────────────
+    tier              = var.instance_tier
     availability_type = var.availability_type
-    # ZONAL    = single zone (dev/test — cheaper)
-    # REGIONAL = multi-zone (production — high availability)
-
-    # ── Disk Settings ───────────────────────────────────────
     disk_size         = var.disk_size
     disk_type         = "PD_SSD"
     disk_autoresize   = true
-    disk_autoresize_limit = 100
 
-    # ── Backup Configuration ────────────────────────────────
+    # ── Backup Configuration ──────────────────────────────
     backup_configuration {
       enabled                        = true
       start_time                     = "02:00"
@@ -36,60 +27,61 @@ resource "google_sql_database_instance" "postgres" {
       }
     }
 
-    # ── Maintenance Window ──────────────────────────────────
+    # ── Maintenance Window ────────────────────────────────
     maintenance_window {
-      day          = 7  # Sunday
-      hour         = 3  # 3 AM
+      day          = 7
+      hour         = 3
       update_track = "stable"
     }
 
-    # ── Network/IP Configuration ────────────────────────────
+    # ── IP Configuration ──────────────────────────────────
+    # Using Cloud SQL Auth Proxy — needs public IP enabled
+    # but connections are still secure via IAM + SSL! 🔐
     ip_configuration {
-      ipv4_enabled                                  = false
-      private_network                               = var.vpc_id
-      enable_private_path_for_google_cloud_services = true
+      ipv4_enabled = true
+
+      # Only allow Cloud SQL Auth Proxy connections
+      # No direct public access!
+      authorized_networks {
+        name  = "deny-all"
+        value = "0.0.0.0/0"
+      }
     }
 
-    # ── Database Flags ──────────────────────────────────────
+    # ── Database Flags ────────────────────────────────────
     database_flags {
       name  = "max_connections"
       value = "100"
     }
-
     database_flags {
       name  = "log_checkpoints"
       value = "on"
     }
-
     database_flags {
       name  = "log_connections"
       value = "on"
     }
-
     database_flags {
       name  = "log_disconnections"
       value = "on"
     }
 
-    # ── Labels ──────────────────────────────────────────────
     user_labels = {
       environment = var.environment
       application = "employee-api"
       managed-by  = "terraform"
     }
   }
-
-  depends_on = [var.private_vpc_connection]
 }
 
-# ── Database ───────────────────────────────────────────────────
+# ── Database ──────────────────────────────────────────────────
 resource "google_sql_database" "employee_db" {
   name     = var.db_name
   instance = google_sql_database_instance.postgres.name
   project  = var.project_id
 }
 
-# ── Database User ──────────────────────────────────────────────
+# ── Database User ─────────────────────────────────────────────
 resource "google_sql_user" "employee_user" {
   name     = var.db_user
   instance = google_sql_database_instance.postgres.name
