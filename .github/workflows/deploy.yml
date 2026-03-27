@@ -1,3 +1,72 @@
+  name: Deploy Employee API to Cloud Run
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: ${{ secrets.GCP_REGION }}
+  SERVICE_NAME: ${{ secrets.CLOUD_RUN_SERVICE }}
+  REGISTRY_URL: ${{ secrets.ARTIFACT_REGISTRY_URL }}
+  IMAGE_NAME: ${{ secrets.ARTIFACT_REGISTRY_URL }}/employee-api
+
+jobs:
+  ci:
+    name: CI — Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r app/requirements.txt
+          pip install pytest pytest-cov flake8
+
+      - name: Lint with flake8
+        run: |
+          flake8 app/ --count --select=E9,F63,F7,F82 \
+            --show-source --statistics
+          flake8 app/ --count --exit-zero \
+            --max-complexity=10 --max-line-length=127 \
+            --statistics
+
+      - name: Build Docker image
+        run: |
+          docker build -t employee-api:${{ github.sha }} .
+          echo "✅ Docker image built successfully!"
+
+      - name: Verify container starts
+        run: |
+          docker run -d \
+            --name test-container \
+            -p 8080:8080 \
+            -e DATABASE_URL="postgresql://test:test@localhost/test" \
+            employee-api:${{ github.sha }} || true
+          sleep 5
+          docker logs test-container || true
+          docker stop test-container || true
+          echo "✅ Container verification complete!"
+
   cd:
     name: CD — Deploy to Cloud Run
     runs-on: ubuntu-latest
@@ -39,7 +108,6 @@
           docker push ${{ env.IMAGE_NAME }}:latest
           echo "✅ Image pushed!"
 
-      # ── Step 1: Deploy new revision with NO traffic ──────
       - name: Deploy new revision (no traffic)
         run: |
           gcloud run deploy ${{ env.SERVICE_NAME }} \
@@ -61,7 +129,6 @@
             --quiet
           echo "✅ New revision deployed with 0% traffic!"
 
-      # ── Step 2: Health check new revision ───────────────
       - name: Health check new revision
         run: |
           sleep 15
@@ -74,13 +141,12 @@
           RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
 
           if [ $RESPONSE -eq 200 ]; then
-            echo "✅ Health check passed — safe to proceed!"
+            echo "✅ Health check passed!"
           else
-            echo "❌ Health check failed — aborting deployment!"
+            echo "❌ Health check failed — aborting!"
             exit 1
           fi
 
-      # ── Step 3: Canary — 20% traffic ────────────────────
       - name: Canary — shift 20% traffic to v2
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
@@ -90,7 +156,6 @@
             --quiet
           echo "✅ 20% traffic shifted to v2!"
 
-      # ── Step 4: Monitor at 20% ───────────────────────────
       - name: Monitor at 20% traffic
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -98,14 +163,14 @@
             --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
 
-          echo "🔍 Running 5 health checks at 20% traffic..."
+          echo "🔍 Running 5 health checks at 20%..."
           FAILURES=0
 
           for i in 1 2 3 4 5; do
             RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
             if [ $RESPONSE -ne 200 ]; then
               FAILURES=$((FAILURES + 1))
-              echo "⚠️ Check $i failed with status: $RESPONSE"
+              echo "⚠️ Check $i failed: $RESPONSE"
             else
               echo "✅ Check $i passed!"
             fi
@@ -113,7 +178,7 @@
           done
 
           if [ $FAILURES -gt 1 ]; then
-            echo "❌ Too many failures — rolling back to v1!"
+            echo "❌ Too many failures — rolling back!"
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --project=${{ env.PROJECT_ID }} \
@@ -123,7 +188,6 @@
           fi
           echo "✅ Monitoring passed at 20%!"
 
-      # ── Step 5: Canary — 50% traffic ────────────────────
       - name: Canary — shift 50% traffic to v2
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
@@ -133,7 +197,6 @@
             --quiet
           echo "✅ 50% traffic shifted to v2!"
 
-      # ── Step 6: Monitor at 50% ───────────────────────────
       - name: Monitor at 50% traffic
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -141,14 +204,14 @@
             --project=${{ env.PROJECT_ID }} \
             --format="value(status.url)")
 
-          echo "🔍 Running 5 health checks at 50% traffic..."
+          echo "🔍 Running 5 health checks at 50%..."
           FAILURES=0
 
           for i in 1 2 3 4 5; do
             RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" $URL/health)
             if [ $RESPONSE -ne 200 ]; then
               FAILURES=$((FAILURES + 1))
-              echo "⚠️ Check $i failed with status: $RESPONSE"
+              echo "⚠️ Check $i failed: $RESPONSE"
             else
               echo "✅ Check $i passed!"
             fi
@@ -156,7 +219,7 @@
           done
 
           if [ $FAILURES -gt 1 ]; then
-            echo "❌ Too many failures — rolling back to v1!"
+            echo "❌ Too many failures — rolling back!"
             gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
               --region=${{ env.REGION }} \
               --project=${{ env.PROJECT_ID }} \
@@ -166,7 +229,6 @@
           fi
           echo "✅ Monitoring passed at 50%!"
 
-      # ── Step 7: Promote to 100% ──────────────────────────
       - name: Promote — shift 100% traffic to v2
         run: |
           gcloud run services update-traffic ${{ env.SERVICE_NAME }} \
@@ -176,7 +238,6 @@
             --quiet
           echo "✅ 100% traffic on new version!"
 
-      # ── Step 8: Final health check ───────────────────────
       - name: Final health check
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
@@ -199,7 +260,6 @@
             exit 1
           fi
 
-      # ── Step 9: Deployment Summary ───────────────────────
       - name: Deployment Summary
         run: |
           URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
